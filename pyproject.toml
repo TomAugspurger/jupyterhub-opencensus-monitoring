@@ -11,4 +11,3 @@ module = "jupyterhub_opencensus_monitor"
 author = "Tom Augspurger"
 author-email = "taugspurger@microsoft.com"
 classifiers = ["License :: OSI Approved :: MIT License"]
-

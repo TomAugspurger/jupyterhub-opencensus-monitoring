@@ -1,46 +1,66 @@
 """
-Opencensun monitor for JupyterHub as a JupyterHub service. 
+Opencensus monitor for JupyterHub as a JupyterHub service.
 """
 import asyncio
 import datetime
 import logging
 import os
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import httpx
 from opencensus.ext.azure import metrics_exporter
-from opencensus.stats import aggregation as aggregation_module
-from opencensus.stats import measure as measure_module
-from opencensus.stats import stats as stats_module
-from opencensus.stats import view as view_module
-from opencensus.tags import tag_map as tag_map_module
+from opencensus.stats import measurement_map
+import opencensus.stats.aggregation
+import opencensus.stats.view
+import opencensus.stats.stats
+import opencensus.stats.measure
+import opencensus.tags.tag_map
 
 
 logger = logging.getLogger(__name__)
 
 
 __version__ = "0.1.0"
-INTERVAL = 15
-APPLICATIONINSIGHTS_CONNECTION_STRING = ""
+INTERVAL = 60  # seconds
 
 # ---- Metrics configuration ----
-tmaps = defaultdict(tag_map_module.TagMap)
+# We collect / record by counts by profile, so create one TagMap per profile.
+server_tag_maps = defaultdict(opencensus.tags.tag_map.TagMap)
 
-server_count_measure = measure_module.MeasureInt(
+server_count_measure = opencensus.stats.measure.MeasureInt(
     "Active servers", "Number of currently active servers", unit="servers"
 )
-mmap = stats_module.stats.stats_recorder.new_measurement_map()
+server_count_view = opencensus.stats.view.View(
+    "Active servers",
+    "Number of currently active servers",
+    ["profile"],
+    server_count_measure,
+    opencensus.stats.aggregation.LastValueAggregation(),
+)
 
+measurement_maps = defaultdict(
+    opencensus.stats.stats.stats.stats_recorder.new_measurement_map
+)
+opencensus.stats.stats.stats.view_manager.register_view(server_count_view)
+exporter = metrics_exporter.new_metrics_exporter()
+
+# ---- Metric helpers ----
 
 
 def count_notebook_servers(data: list):
-    server_count = defaultdict(lambda: 0)
+    """
+    Count the number of notebook servers by profile.
+    """
+    server_count = Counter()
+
     for user in data:
         for _, server in user["servers"].items():
             profile = server["user_options"]["profile"]
-            tag_map = tmaps[profile]
+            tag_map = server_tag_maps[profile]
             tag_map.insert("profile", profile)
-            server_count += 1
+            server_count[profile] += 1
+
+    return server_count
 
 
 async def main():
@@ -64,7 +84,14 @@ async def main():
                 f"{JUPYTERHUB_API_URL}/users?state=active", headers=headers
             )
             data = response.json()
-            print(data)
+            server_count = count_notebook_servers(data)
+            for profile, count in server_count.items():
+                measurement_map = measurement_maps[profile]
+                tag_map = server_tag_maps[profile]
+                measurement_map.measure_int_put(server_count_measure, count)
+                measurement_map.record(tag_map)
+
+            logger.debug("Sleeping for %d", INTERVAL)
             await asyncio.sleep(INTERVAL)
 
 
