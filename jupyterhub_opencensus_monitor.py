@@ -2,14 +2,12 @@
 Opencensus monitor for JupyterHub as a JupyterHub service.
 """
 import asyncio
-import datetime
 import logging
 import os
 from collections import Counter, defaultdict
 
 import httpx
 from opencensus.ext.azure import metrics_exporter
-from opencensus.stats import measurement_map
 import opencensus.stats.aggregation
 import opencensus.stats.view
 import opencensus.stats.stats
