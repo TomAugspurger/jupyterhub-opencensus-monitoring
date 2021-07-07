@@ -96,7 +96,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    import coloredlogs
-
-    coloredlogs.install()
     asyncio.run(main())
